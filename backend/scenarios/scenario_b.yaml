@@ -1,0 +1,66 @@
+# scenario_b.yaml — Pricing Page Confusion
+#
+# Ground truth: The pricing page copy was reworded — the number of seats per
+# plan is now ambiguous ("up to 3" vs "per user").  Desktop first-time customers
+# are reading the pricing page carefully and abandoning at checkout when they
+# see a different seat count.  Mobile customers are less affected because they
+# skimmed the pricing page.
+#
+# This scenario tests whether the Investigator avoids the easy mobile narrative
+# and correctly identifies desktop_first_time as the hit segment.
+#
+# Expected agent behaviour:
+#   Investigator: compare_segments → desktop_first_time abandonment ≫ mobile_*
+#                 get_recent_business_changes → pricing copy changed 12 h ago
+#                 confidence ≥ 0.80, root_cause = "pricing_confusion"
+#   Operator:     apply_faq_update OR apply_checkout_fix(action='update_copy') →
+#                 canary passes → promote_to_full_rollout → outcome = "resolved"
+
+name: scenario_b
+display_name: "Pricing Page Copy Confusion"
+milestone: "M4 – Investigator / M5 – Operator"
+
+ground_truth:
+  root_cause: "pricing_confusion"
+  affected_segment: "desktop_first_time"
+  correct_intervention: "update_checkout_copy"
+  intervention_tool: "apply_checkout_fix"
+  intervention_args:
+    action: "update_copy"
+    segment: "desktop_first_time"
+
+detection:
+  should_fire: true
+  min_abandonment_rate: 0.60
+  max_abandonment_rate_mobile: 0.22   # mobile comparatively unaffected
+  primary_anomaly_segment: "desktop_first_time"
+  severity: "medium"
+
+investigator:
+  min_confidence: 0.75
+  root_cause_contains: "pricing"
+  needs_human_review: false
+  must_call_tools:
+    - "compare_segments_tool"
+    - "get_recent_business_changes"
+
+operator:
+  expected_outcome: "resolved"
+  canary_must_pass: true
+  max_interventions: 2
+
+business_state:
+  checkout_copy: "ambiguous_seats"
+  fees_disclosed: true
+  hidden_fees: []
+  pricing_clarity: "low"
+  recent_changes:
+    - type: "content"
+      description: "Pricing page copy updated — seat language reworded"
+      hours_ago: 12
+
+red_herrings:
+  - label: "Mobile checkout"
+    reason: "Mobile traffic is fine — only desktop_first_time shows elevated abandonment"
+  - label: "Payment provider"
+    reason: "Stripe failure rate is normal (< 8 %)"

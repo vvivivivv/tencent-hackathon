@@ -1,0 +1,79 @@
+# scenario_c.yaml — Weather Red Herring (Canary Rollback)
+#
+# Ground truth: A checkout configuration change (step order was reordered —
+# confirmation now comes before payment details entry) causes confusion across
+# ALL segments.  Weather data shows a cold snap at the same time.
+#
+# This is the hardest scenario — the Investigator must resist the weather
+# narrative (classic confound) and correctly attribute the anomaly to the
+# checkout step-order change.
+#
+# Additionally, the first intervention (FAQ update) fails the canary (CSAT
+# drops).  The Operator must roll back and try a second intervention
+# (checkout fix / step reorder), which passes.
+#
+# Expected agent behaviour:
+#   Investigator: compare_segments → all segments affected (not segment-specific)
+#                 get_recent_business_changes → checkout step order changed 6 h ago
+#                 falsify weather hypothesis explicitly
+#                 confidence ≥ 0.82, root_cause = "checkout_step_reorder"
+#   Operator:     (attempt 1) apply_faq_update → canary FAILS → auto-rollback
+#                 (attempt 2) apply_checkout_fix(action='reorder_steps') → canary passes
+#                 → promote_to_full_rollout → outcome = "resolved"
+
+name: scenario_c
+display_name: "Weather Red Herring + Canary Rollback"
+milestone: "M4 – Investigator / M5 – Operator / M6 – Canary guard"
+
+ground_truth:
+  root_cause: "checkout_step_reorder"
+  affected_segment: "all"
+  correct_intervention: "update_checkout_copy"
+  intervention_tool: "apply_checkout_fix"
+  intervention_args:
+    action: "reorder_steps"
+    segment: "all"
+
+detection:
+  should_fire: true
+  min_abandonment_rate: 0.55
+  primary_anomaly_segment: "all"
+  severity: "high"
+
+investigator:
+  min_confidence: 0.80
+  root_cause_contains: "checkout"
+  must_falsify: "weather"
+  needs_human_review: false
+  must_call_tools:
+    - "compare_segments_tool"
+    - "get_recent_business_changes"
+    - "get_segment_stats_tool"
+
+operator:
+  expected_outcome: "resolved"
+  canary_rollback_expected: true
+  canary_must_pass: true
+  max_interventions: 2
+
+business_state:
+  checkout_copy: "reordered_steps"
+  fees_disclosed: true
+  hidden_fees: []
+  pricing_clarity: "high"
+  recent_changes:
+    - type: "checkout_config"
+      description: "Checkout step order changed — payment now appears before confirmation summary"
+      hours_ago: 6
+
+red_herrings:
+  - label: "Weather cold snap"
+    reason: >
+      Temperature dropped 15°C in the user base's primary market at the same time.
+      Correlates with the time window but is not causal — all segment comparison
+      shows desktop_returning is equally affected, which rules out a population
+      composition shift.
+  - label: "iOS 18 Safari update"
+    reason: >
+      A minor Safari update rolled out — but desktop Chrome users show the same
+      abandonment rate, ruling out a browser-specific issue.
