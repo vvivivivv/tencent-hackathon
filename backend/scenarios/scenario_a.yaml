@@ -1,0 +1,62 @@
+# scenario_a.yaml — Mobile First-Time Checkout Fee
+#
+# Ground truth: An unexpected processing fee is disclosed only at the final
+# payment step, causing first-time mobile customers to abandon disproportionately.
+#
+# Expected agent behaviour:
+#   Investigator: compare_segments → mobile_first_time abandonment ≫ desktop_returning
+#                 get_recent_business_changes → fee config changed 18 h ago
+#                 confidence ≥ 0.85, root_cause = "unexpected_checkout_fee"
+#   Operator:     apply_checkout_fix(action='remove_fee') → canary passes →
+#                 promote_to_full_rollout → outcome = "resolved"
+
+name: scenario_a
+display_name: "Mobile Checkout Fee Surprise"
+milestone: "M4 – Investigator / M5 – Operator"
+
+ground_truth:
+  root_cause: "unexpected_checkout_fee"
+  affected_segment: "mobile_first_time"
+  correct_intervention: "remove_checkout_fee"
+  intervention_tool: "apply_checkout_fix"
+  intervention_args:
+    action: "remove_fee"
+    segment: "mobile_first_time"
+
+detection:
+  should_fire: true
+  min_abandonment_rate: 0.65          # mobile_first_time abandonment ≥ 65 %
+  max_abandonment_rate_desktop: 0.20  # desktop_returning unaffected (< 20 %)
+  primary_anomaly_segment: "mobile_first_time"
+  severity: "high"
+
+investigator:
+  min_confidence: 0.80
+  root_cause_contains: "fee"          # substring match against reported root_cause
+  needs_human_review: false
+  must_call_tools:
+    - "compare_segments_tool"
+    - "get_recent_business_changes"
+
+operator:
+  expected_outcome: "resolved"
+  canary_must_pass: true
+  max_interventions: 1
+
+business_state:
+  checkout_copy: "standard"
+  fees_disclosed: false              # the trigger — fee hidden until payment page
+  hidden_fees:
+    - name: "processing_fee"
+      amount: 3.99
+  pricing_clarity: "high"
+  recent_changes:
+    - type: "checkout_config"
+      description: "Processing fee added to checkout flow"
+      hours_ago: 18
+
+red_herrings:
+  - label: "Weather"
+    reason: "Rainy day in the user base's region — traffic slightly up but not causal"
+  - label: "Marketing campaign"
+    reason: "A new ad campaign ran yesterday — it increased traffic, not abandonment"
