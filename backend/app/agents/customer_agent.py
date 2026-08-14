@@ -36,6 +36,7 @@ from google.genai import types
 
 from app.agents.prompts import CUSTOMER_SYSTEM_PROMPT, build_customer_prompt
 from app.simulation.personas import PERSONAS
+from app.simulation.world_events import emit_customer_journey
 
 
 _client: Optional[genai.Client] = None
@@ -187,7 +188,8 @@ def run_customer_simulation(
     db=None,
     scenario: Optional[str] = None,
     write_to_db: bool = True,
-) -> list[dict]:
+    run_id: str | None = None,
+):
     """
     Simulate a full cohort of customers and optionally write journeys to DB.
 
@@ -217,6 +219,9 @@ def run_customer_simulation(
 
         if write_to_db and db is not None:
             _write_journey_to_db(journey, db)
+        
+        if run_id and db is not None:
+            emit_customer_journey(db, run_id, journey)
 
     return journeys
 

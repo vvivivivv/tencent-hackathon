@@ -196,3 +196,64 @@ def list_scenarios() -> list[dict]:
         for name, cfg in SCENARIOS.items()
         if name != "mobile_checkout_fee"  # hide legacy alias
     ]
+
+
+def _custom_inject(persona: dict, business_state: dict | None = None) -> str:
+    """
+    Generic parametrized injector for user-defined stress-test scenarios.
+    business_state carries: target_device, target_customer_type, abandonment_rate.
+    "all" or None on target_* matches every persona in that dimension.
+    """
+    import random
+    bs = business_state or {}
+    device = persona.get("device")
+    ctype = persona.get("customer_type")
+    target_device = bs.get("target_device") or "all"
+    target_type = bs.get("target_customer_type") or "all"
+    rate = float(bs.get("abandonment_rate", 0.5))
+
+    matches = (target_device in ("all", device)) and (target_type in ("all", ctype))
+    if matches:
+        return "abandoned" if random.random() < rate else "completed"
+    return "completed"
+
+
+def register_custom_scenario(
+    key: str,
+    display_name: str,
+    root_cause: str,
+    target_device: str,
+    target_customer_type: str,
+    abandonment_rate: float,
+    extra_business_state: dict | None = None,
+) -> dict:
+    """
+    Register a user-defined stress-test scenario at runtime.
+    Returns the registered scenario config dict.
+    """
+    affected_segment = (
+        "all" if target_device == "all" and target_customer_type == "all"
+        else f"{target_device}_{target_customer_type}"
+    )
+    business_state = {
+        "checkout_copy": "custom",
+        "fees_disclosed": True,
+        "hidden_fees": [],
+        "pricing_clarity": "high",
+        "target_device": target_device,
+        "target_customer_type": target_customer_type,
+        "abandonment_rate": abandonment_rate,
+        **(extra_business_state or {}),
+    }
+    SCENARIOS[key] = {
+        "display_name": display_name,
+        "yaml": None,
+        "ground_truth": {
+            "root_cause": root_cause,
+            "affected_segment": affected_segment,
+        },
+        "business_state": business_state,
+        "inject": _custom_inject,
+        "is_custom": True,
+    }
+    return SCENARIOS[key]

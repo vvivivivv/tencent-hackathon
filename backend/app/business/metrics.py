@@ -19,10 +19,6 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-# ---------------------------------------------------------------------------
-# Baselines (healthy-day expectations per segment)
-# ---------------------------------------------------------------------------
-
 #: Expected abandonment rate (0-1) on a healthy run, keyed by segment.
 BASELINE_ABANDONMENT: dict[str, float] = {
     "mobile_first_time":   0.15,
@@ -43,10 +39,6 @@ MIN_SAMPLE_SIZE: int = 2
 #: threshold — this keeps the maths dead simple and the result defensible.
 CONFIDENCE_SLOPE: float = 1.5   # multiplier on normalised excess
 
-
-# ---------------------------------------------------------------------------
-# Data-transfer types
-# ---------------------------------------------------------------------------
 
 @dataclass
 class SegmentStats:
@@ -117,10 +109,6 @@ class DetectionResult:
         }
 
 
-# ---------------------------------------------------------------------------
-# Core helpers
-# ---------------------------------------------------------------------------
-
 def _segment_key(device: str, customer_type: str) -> str:
     return f"{device}_{customer_type}"
 
@@ -154,10 +142,6 @@ def _severity(diff: float) -> str:
         return "medium"
     return "low"
 
-
-# ---------------------------------------------------------------------------
-# Public API
-# ---------------------------------------------------------------------------
 
 def get_segment_stats(journeys: list[dict]) -> dict[str, SegmentStats]:
     """
@@ -214,7 +198,7 @@ def detect_anomalies(
     anomalies: list[AnomalyRecord] = []
 
     for segment, current in stats.items():
-        baseline = BASELINE_ABANDONMENT.get(segment)
+        baseline = BASELINE_ABANDONMENT.get(segment, 0.15)
         if baseline is None:
             continue                        # unknown segment, skip
         if current.total < min_sample:
