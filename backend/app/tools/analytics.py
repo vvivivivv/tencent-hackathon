@@ -37,6 +37,18 @@ def _fetch_journeys(db, scenario: Optional[str] = None, hours: int = 24) -> list
     """
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
 
+    if scenario and scenario.startswith("custom_"):
+        q = db.table("journeys").select(
+            "id, customer_id, scenario, goal, steps, result, duration_seconds, created_at"
+        ).eq("scenario", scenario)
+    else:
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        q = db.table("journeys").select(
+            "id, customer_id, scenario, goal, steps, result, duration_seconds, created_at"
+        ).gte("created_at", cutoff)
+        if scenario:
+            q = q.eq("scenario", scenario)
+
     # Supabase doesn't support a direct join in the Python client the same way
     # SQL does, so we fetch journeys + customers in two queries and merge.
     q = db.table("journeys").select(

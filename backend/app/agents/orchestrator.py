@@ -33,6 +33,10 @@ from app.tools.analytics import _fetch_journeys
 from app.agents.investigator import investigate_from_detection, InvestigatorReport
 from app.agents.operator import operate, OperatorReport
 import app.agents.memory as memory
+from app.simulation.world_events import (
+    emit_anomaly_alert, emit_agent_move, emit_agent_speak,
+    emit_agent_fix_apply, emit_agent_verify, emit_metrics_update, emit_incident_resolved,
+)
 
 
 class Stage(str, Enum):
@@ -116,11 +120,13 @@ class Orchestrator:
         scenario: Optional[str] = None,
         hours: int = 24,
         run_id: Optional[str] = None,
+        initial_journeys: Optional[list[dict]] = None,
     ) -> None:
         import uuid
         self.db       = db
         self.scenario = scenario
         self.hours    = hours
+        self._journeys = initial_journeys or []
         self.state    = OrchestratorState(
             run_id=run_id or str(uuid.uuid4()),
             scenario=scenario,
@@ -150,17 +156,23 @@ class Orchestrator:
         """
         try:
             yield from self._stage_discover()
+            time.sleep(2)
             yield from self._stage_observe()
+            time.sleep(1.5)
             yield from self._stage_detect()
+            time.sleep(2)
             if not self.state.detection or not self.state.detection.get("has_anomaly"):
                 yield from self._stage_close("no_anomaly")
                 return
             yield from self._stage_investigate()
+            time.sleep(4)
             if self.state.investigator_report and self.state.investigator_report.get("needs_human_review"):
                 yield from self._stage_escalate()
                 return
             yield from self._stage_act()
+            time.sleep(2)
             yield from self._stage_verify()
+            time.sleep(2)
             yield from self._stage_close(self.state.operator_report.get("outcome", "unknown") if self.state.operator_report else "unknown")
 
         except Exception as exc:
@@ -195,41 +207,59 @@ class Orchestrator:
     def _stage_observe(self):
         """OBSERVE — fetch raw journey data."""
         self._transition(Stage.OBSERVE)
-        self._journeys = _fetch_journeys(self.db, scenario=self.scenario, hours=self.hours) if self.db else []
+        if not self._journeys:
+            self._journeys = _fetch_journeys(self.db, scenario=self.scenario, hours=self.hours) if self.db else []
+        
         self.state.journey_count = len(self._journeys)
         yield self.state
 
     def _stage_detect(self):
-        """DETECT — run deterministic anomaly detection."""
         self._transition(Stage.DETECT)
-        detection_result: DetectionResult = run_detection(self._journeys, scenario=None)
+        detection_result: DetectionResult = run_detection(self._journeys, scenario=self.scenario)
         self._detection = detection_result
         self.state.detection = detection_result.to_dict()
 
-        # Compute health score before intervention
+        self.state.operator_report = {
+            "reasoning": f"Analyzed {len(self._journeys)} journeys. " + 
+                         (f"Primary issue: {detection_result.summary}" if detection_result.has_anomaly else "No deviations found.")
+        }
+
+        if detection_result.has_anomaly:
+            emit_anomaly_alert(self.db, self.state.run_id, detection_result.summary)
+            self.state.outcome = "Anomaly Detected"
+        else:
+            self.state.outcome = "System Healthy"
+            
+        yield self.state
+
         if self._journeys:
             total = len(self._journeys)
             completed = sum(1 for j in self._journeys if j.get("result") == "completed")
             conversion = completed / total if total else 0.0
             self.state.health_before = round(conversion * 100, 1)
-
+            emit_metrics_update(self.db, self.state.run_id,
+                                abandonment_pct=round((1 - conversion) * 100),
+                                conversion_pct=round(conversion * 100))
         yield self.state
 
     def _stage_investigate(self):
-        """INVESTIGATE — Investigator agent builds counterfactual hypotheses."""
         self._transition(Stage.INVESTIGATE)
-        investigator_report: InvestigatorReport = investigate_from_detection(
-            self._detection,
-            db=self.db,
-            scenario=self.scenario,
-        )
-        self._investigator_report = investigator_report
-        self.state.investigator_report = investigator_report.to_dict()
-
-        # Build hypothesis board from the reasoning text
-        self.state.hypotheses = _extract_hypotheses(investigator_report)
-
+        emit_agent_move(self.db, self.state.run_id, "aisle_center")
+        emit_agent_speak(self.db, self.state.run_id, "Anomaly detected. Investigating root cause...")
+        self.state.investigator_report = {
+            "reasoning": "Constructing counterfactual tests... Comparing mobile vs desktop baselines."
+        }
         yield self.state
+        time.sleep(2)
+
+        report = investigate_from_detection(self._detection, db=self.db, scenario=self.scenario)
+        self._investigator_report = report
+        self.state.investigator_report = report.to_dict()
+        emit_agent_speak(self.db, self.state.run_id, f"Found it: {report.root_cause[:40]}...")
+        
+        self.state.hypotheses = _extract_hypotheses(report)
+        yield self.state
+        
 
     def _stage_act(self):
         """PLAN + ACT (canary) + CANARY_CHECK + ACT (full) — Operator applies fix."""
@@ -237,23 +267,25 @@ class Orchestrator:
         yield self.state
 
         self._transition(Stage.ACT_CANARY)
-        operator_report: OperatorReport = operate(
-            self._investigator_report,
-            db=self.db,
-        )
+        emit_agent_move(self.db, self.state.run_id, "cashier")
+
+        operator_report: OperatorReport = operate(self._investigator_report, db=self.db)
         self._operator_report = operator_report
         self.state.operator_report = operator_report.to_dict()
         self.state.outcome = operator_report.outcome
 
+        if operator_report.intervention_type:
+            emit_agent_fix_apply(self.db, self.state.run_id, operator_report.intervention_type)
+
         self._transition(Stage.CANARY_CHECK)
         yield self.state
-
         self._transition(Stage.ACT_FULL)
         yield self.state
 
     def _stage_verify(self):
         """VERIFY — re-run detection on the updated business state."""
         self._transition(Stage.VERIFY)
+        emit_agent_verify(self.db, self.state.run_id)
 
         # Re-fetch journeys after intervention
         post_journeys = _fetch_journeys(self.db, scenario=self.scenario, hours=self.hours) if self.db else []
@@ -320,6 +352,9 @@ class Orchestrator:
                 }).execute()
             except Exception:
                 pass
+                
+            if outcome == "resolved":
+                emit_incident_resolved(self.db, self.state.run_id)
 
         yield self.state
 

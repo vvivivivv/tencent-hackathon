@@ -48,7 +48,7 @@ def _get_client() -> genai.Client:
     return _client
 
 
-MODEL = "gemini-flash-latest"
+MODEL = "gemini-3.5-flash"
 
 
 @dataclass

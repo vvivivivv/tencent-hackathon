@@ -296,6 +296,9 @@ def operate(
     Returns:
         OperatorReport with outcome, intervention taken, canary result, and reasoning.
     """
+    if investigator_report.confidence < 0.1: # Catch the 429 fallback report
+        return OperatorReport(outcome="no_action", reasoning="Investigation failed due to API quota.", actions_taken=[], raw_response="", intervention_id=None, intervention_type=None, canary_passed=None, escalation_reason="Quota Limit")
+        
     client = _get_client()
     tools = _make_tools(db)
 
