@@ -1,5 +1,5 @@
 "use client";
-import { useState, useCallback, useRef, useEffect } from "react";
+import { Suspense, useState, useCallback, useRef, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useSearchParams } from "next/navigation";
 import { runScenario, stopScenario, SCENARIO_META } from "./simulation/scenarios/scenarioEvents";
@@ -15,7 +15,7 @@ import { useCustomRunWorldEvents } from "./hooks/useCustomRunWorldEvents";
 
 const PixiWorld = dynamic(() => import("./components/PixiWorld"), { ssr: false });
 
-export default function Page() {
+function PageContent() {
   const searchParams = useSearchParams();
   const debug = searchParams?.get("debug") === "1";
 
@@ -179,5 +179,13 @@ export default function Page() {
         <SimulationSettingsPanel onClose={() => setShowSettings(false)} onRunStarted={onCustomRunStarted} />
       )}
     </div>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={null}>
+      <PageContent />
+    </Suspense>
   );
 }

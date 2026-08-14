@@ -15,7 +15,7 @@ load_dotenv()
 from app.database.db import get_client
 from app.agents.orchestrator import Orchestrator, OrchestratorState
 from app.simulation.scenario_engine import register_custom_scenario, get_scenario_business_state
-from app.simulation.world_events import emit_customer_journey # Ensure this is imported
+from app.simulation.world_events import emit_customer_journey
 from app.simulation.personas import PERSONAS
 from app.agents.customer_agent import run_customer_simulation
 from app.simulation.scenario_engine import run_scenario as inject_scenario
