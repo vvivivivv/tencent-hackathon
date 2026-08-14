@@ -9,6 +9,7 @@ import type { ScenarioId } from "./simulation/scenarios/scenarioEvents";
 import { backendApi } from "./api/client";
 import MetricsBar from "./components/MetricsBar";
 import AgentLogPanel from "./components/AgentLogPanel";
+import { DISPLAY_MAX_W, DISPLAY_MAX_H } from "./simulation/entities/WorldLayout";
 
 import SimulationSettingsPanel from "./components/SimulationSettingsPanel"; 
 import { useCustomRunWorldEvents } from "./hooks/useCustomRunWorldEvents";
@@ -119,14 +120,14 @@ function PageContent() {
         <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center bg-gradient-to-b from-transparent to-black/40 scrollbar-thin">
            <div className="flex flex-col gap-4">
                 {activeScenario && (
-                    <div className="w-[900px] h-1.5 bg-white/10 rounded-full overflow-hidden">
+                    <div className="h-1.5 bg-white/10 rounded-full overflow-hidden" style={{ width: `${DISPLAY_MAX_W}px` }}>
                         <div className="h-full bg-blue-500 transition-all duration-1000" style={{ width: `${progress}%` }} />
                     </div>
                 )}
-                <div className="border border-white/10 rounded-2xl bg-black shadow-2xl overflow-hidden flex-shrink-0" style={{ width: '900px', height: '500px' }}>
+                <div className="border border-white/10 rounded-2xl bg-black shadow-2xl overflow-hidden flex-shrink-0" style={{ width: `${DISPLAY_MAX_W}px`, height: `${DISPLAY_MAX_H}px` }}>
                     <PixiWorld storeType={storeType} debug={debug} />
                 </div>
-                <div className="w-[900px] flex gap-4 items-center bg-slate-900/30 p-3 rounded-2xl border border-white/5 shadow-lg">
+                <div className="flex gap-4 items-center bg-slate-900/30 p-3 rounded-2xl border border-white/5 shadow-lg" style={{ width: `${DISPLAY_MAX_W}px` }}>
                     <div className="flex-1">
                         <MetricsBar abandonment={metrics.abandonment} conversion={metrics.conversion} resolved={resolved} />
                     </div>
@@ -154,7 +155,7 @@ function PageContent() {
         </div>
       </div>
 
-      <div className={traceFullscreen ? "fixed inset-0 z-[999] bg-[#020408]" : "h-64 flex-shrink-0 border-t border-white/10 bg-black flex flex-col"}>
+      <div className={traceFullscreen ? "fixed inset-0 z-[999] bg-[#020408]" : "h-54 flex-shrink-0 border-t border-white/10 bg-black flex flex-col"}>
         <div className="flex-shrink-0 px-6 py-2 border-b border-white/5 flex items-center justify-between bg-slate-900/20">
           <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Agent Intelligence Trace</span>
           <button onClick={() => setTraceFullscreen(!traceFullscreen)} className="text-[9px] text-slate-500 hover:text-white uppercase tracking-widest underline underline-offset-8 transition-all">{traceFullscreen ? "Minimize" : "Expand Full Log"}</button>
