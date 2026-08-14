@@ -116,7 +116,7 @@ function PageContent() {
         <AgentLogPanel entries={logEntries} horizontal={true} onEntryClick={(e) => techLogRefs.current[e.id]?.scrollIntoView({ behavior: "smooth", block: "center" })} />
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 min-h-0 flex overflow-hidden">
         <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center bg-gradient-to-b from-transparent to-black/40 scrollbar-thin">
            <div className="flex flex-col gap-4">
                 {activeScenario && (
@@ -155,12 +155,12 @@ function PageContent() {
         </div>
       </div>
 
-      <div className={traceFullscreen ? "fixed inset-0 z-[999] bg-[#020408]" : "h-54 flex-shrink-0 border-t border-white/10 bg-black flex flex-col"}>
+      <div className={traceFullscreen ? "fixed inset-0 z-[999] bg-[#020408] flex flex-col min-h-0" : "h-54 flex-shrink-0 border-t border-white/10 bg-black flex flex-col min-h-0"}>
         <div className="flex-shrink-0 px-6 py-2 border-b border-white/5 flex items-center justify-between bg-slate-900/20">
           <span className="text-[10px] font-bold uppercase tracking-widest text-blue-400">Agent Intelligence Trace</span>
           <button onClick={() => setTraceFullscreen(!traceFullscreen)} className="text-[9px] text-slate-500 hover:text-white uppercase tracking-widest underline underline-offset-8 transition-all">{traceFullscreen ? "Minimize" : "Expand Full Log"}</button>
         </div>
-        <div ref={traceScrollRef} className="flex-1 overflow-y-auto p-6 space-y-6 scrollbar-thin">
+        <div ref={traceScrollRef} className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 scrollbar-thin">
           {logEntries.map(e => (
             <div key={e.id} ref={el => { techLogRefs.current[e.id] = el; }} className="border-l border-white/10 pl-6 group">
               <div className="flex items-center gap-4 text-[9px] mb-2">
