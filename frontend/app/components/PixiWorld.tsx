@@ -152,6 +152,7 @@ export default function PixiWorld({ storeType, debug = false }: { storeType: Sto
     }, 60);
 
     const unsub = WorldEventBus.on((event) => {
+      console.log("[PIXI WORLD EVENT]", event);
       const layer = charLayerRef.current;
       if (!layer || isDestroyed) return;
 
@@ -159,6 +160,7 @@ export default function PixiWorld({ storeType, debug = false }: { storeType: Sto
         case "RESET_WORLD": resetWorld(storeTypeRef.current); break;
 
         case "CUSTOMER_ENTER": {
+          console.log("[PIXI WORLD EVENT]", event);
           const entrance = zonePx("entrance");
           const c = new CustomerEntity(
             event.customerId, event.color, storeTypeRef.current,

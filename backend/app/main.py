@@ -17,8 +17,8 @@ from app.agents.orchestrator import Orchestrator, OrchestratorState
 from app.simulation.scenario_engine import register_custom_scenario, get_scenario_business_state
 from app.simulation.world_events import emit_customer_journey
 from app.simulation.personas import PERSONAS
-from app.agents.customer_agent import run_customer_simulation
-from app.simulation.scenario_engine import run_scenario as inject_scenario
+from app.agents.customer_agent import run_customer_simulation, _write_journey_to_db
+from app.simulation.scenario_engine import run_scenario as inject_scenario, run_custom_scenario
 
 app = FastAPI()
 
@@ -43,39 +43,93 @@ class CustomScenarioRequest(BaseModel):
     persona_mode: str = Field("static")
 
 
-def _run_custom_scenario_background(run_id: str, req: CustomScenarioRequest):
-    scenario_key = f"custom_{run_id[:8]}"
-    db = get_client()
-    
-    time.sleep(3) 
+def _run_custom_scenario_background(
+    run_id: str,
+    req: CustomScenarioRequest
+):
+    print("\n" + "=" * 80)
+    print(f"[CUSTOM RUN START] run_id={run_id}")
+    print(f"[CUSTOM RUN] request={req.model_dump()}")
+    print("=" * 80)
 
-    register_custom_scenario(
-        key=scenario_key, display_name=req.display_name, root_cause=req.root_cause,
-        target_device=req.target_device, target_customer_type=req.target_customer_type,
-        abandonment_rate=req.abandonment_rate,
-    )
-    
-    from app.simulation.personas import PERSONAS
-    from app.simulation.scenario_engine import run_scenario as inject_scenario
-    from app.agents.customer_agent import _write_journey_to_db, run_customer_simulation
-    
-    personas = PERSONAS[:req.num_personas]
-    business_state = get_scenario_business_state(scenario_key)
+    try:
+        scenario_key = f"custom_{run_id[:8]}"
+        db = get_client()
 
-    if req.persona_mode == "llm":
-        journeys = run_customer_simulation(personas=personas, db=db, scenario=scenario_key, run_id=run_id)
-    else:
-        journeys = inject_scenario(scenario_key, personas)
-        for j in journeys:
-            j["customer_id"] = j["name"]
-            # Visuals
-            emit_customer_journey(db, run_id, j, step_delay=0.6)
-            if db:
-                _write_journey_to_db(j, db)
+        print(f"[CUSTOM RUN] scenario_key={scenario_key}")
+        print("[CUSTOM RUN] DB client created")
 
-    orch = Orchestrator(db=db, scenario=scenario_key, run_id=run_id, initial_journeys=journeys)
-    for state in orch.run_steps():
-        _runs[run_id] = state
+        register_custom_scenario(
+            key=scenario_key,
+            display_name=req.display_name,
+            root_cause=req.root_cause,
+            target_device=req.target_device,
+            target_customer_type=req.target_customer_type,
+            abandonment_rate=req.abandonment_rate,
+        )
+
+        print("[CUSTOM RUN] scenario registered")
+
+        personas = PERSONAS[:req.num_personas]
+
+        print(
+            f"[CUSTOM RUN] personas={len(personas)}, "
+            f"mode={req.persona_mode}"
+        )
+
+        business_state = get_scenario_business_state(scenario_key)
+
+        print(
+            f"[CUSTOM RUN] business_state={business_state}"
+        )
+
+        if req.persona_mode == "llm":
+            print("[CUSTOM RUN] STARTING LLM CUSTOMER SIMULATION")
+            journeys = run_customer_simulation(personas=personas, db=db, scenario=scenario_key, run_id=run_id)
+            print(f"[CUSTOM RUN] LLM simulation returned {len(journeys)} journeys")
+        else:
+            print("[CUSTOM RUN] STARTING STATIC CUSTOMER SIMULATION")
+            journeys = run_custom_scenario(scenario_key, personas)   # was: inject_scenario(scenario_key, personas)
+            print(f"[CUSTOM RUN] run_custom_scenario returned {len(journeys)} journeys")
+
+            for i, j in enumerate(journeys):
+                j["customer_id"] = j.get("name", f"customer_{i}")
+                print(f"[CUSTOM RUN] emitting world journey for {j['customer_id']}")
+                emit_customer_journey(db, run_id, j)
+                if db:
+                    _write_journey_to_db(j, db)
+                    
+        print("[CUSTOM RUN] creating orchestrator")
+
+        orch = Orchestrator(
+            db=db,
+            scenario=scenario_key,
+            run_id=run_id,
+            initial_journeys=journeys,
+        )
+
+        for state in orch.run_steps():
+            print(
+                f"[CUSTOM RUN] orchestrator state: "
+                f"{getattr(state, 'stage', state)}"
+            )
+            _runs[run_id] = state
+
+    except Exception as exc:
+
+        print("\n" + "!" * 80)
+        print(f"[CUSTOM RUN ERROR] run_id={run_id}")
+        print(f"[CUSTOM RUN ERROR] {type(exc).__name__}: {exc}")
+        print("!" * 80)
+
+        import traceback
+        traceback.print_exc()
+
+        _runs[run_id] = {
+            "run_id": run_id,
+            "stage": "ERROR",
+            "error": str(exc),
+        }
 
 @app.post("/run-custom")
 async def start_custom_run(req: CustomScenarioRequest, background_tasks: BackgroundTasks):

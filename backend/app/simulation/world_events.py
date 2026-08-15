@@ -14,6 +14,7 @@ Investigator/Operator are actually doing — not a scripted proxy.
 from __future__ import annotations
 import time
 import hashlib
+import traceback
 
 _COLORS = [0xff9f69, 0x69c3ff, 0xb5ff69, 0xffd169, 0xe069ff, 0x69ffe0, 0xff69b4, 0x69ffb4]
 
@@ -24,36 +25,61 @@ def color_for(name: str) -> int:
 
 
 def _emit(db, run_id: str, event_type: str, **fields) -> None:
+
     if db is None:
+        print("[WORLD EVENT] db is None")
         return
+
+    payload = {
+        "type": f"WORLD_{event_type}",
+        "metadata": {
+            "run_id": run_id,
+            **fields,
+        },
+    }
+
+    print(
+        f"[WORLD EVENT INSERT] "
+        f"type={payload['type']} "
+        f"run_id={run_id}"
+    )
+
     try:
-        db.table("events").insert({
-            "type": f"WORLD_{event_type}",
-            "metadata": {"run_id": run_id, **fields},
-        }).execute()
-    except Exception:
-        pass  # world events are cosmetic — never crash the pipeline over one
+
+        result = (
+            db
+            .table("events")
+            .insert(payload)
+            .execute()
+        )
+
+        print(
+            f"[WORLD EVENT INSERTED] "
+            f"type={payload['type']} "
+            f"result={result.data}"
+        )
+
+    except Exception as e:
+
+        print(
+            f"[WORLD EVENT ERROR] "
+            f"type={payload['type']} "
+            f"error={e}"
+        )
+
+        traceback.print_exc()
 
 
-def emit_customer_journey(db, run_id: str, journey: dict, step_delay: float = 0.5) -> None:
-    """
-    Replay one journey's outcome as a sequence of WORLD_ events, with small
-    delays between them so the frontend renders it as a live sequence rather
-    than everything appearing at once.
-
-    Called once per persona from customer_agent.run_customer_simulation()
-    (or simulator.run_simulation) right after the journey is decided.
-    """
-    cid = journey.get("customer_id") or journey.get("name") or "unknown"    
+def emit_customer_journey(db, run_id: str, journey: dict, step_delay: float = 0.9) -> None:
+    cid = journey.get("customer_id") or journey.get("name") or "unknown"
     color = color_for(cid)
     device = journey.get("device", "desktop")
-    ctype = journey.get("customer_type", "returning")
+    customer_type = journey.get("customer_type", "returning")
 
-    zone_map = {"aisle_left": "aisle_left", "aisle_center": "aisle_center", "aisle_right": "aisle_right"}
-    browse_zone = zone_map.get(hashlib.md5(cid.encode()).hexdigest()[:1] and
-                                ["aisle_left", "aisle_center", "aisle_right"][int(hashlib.md5(cid.encode()).hexdigest(), 16) % 3])
+    zones = ["aisle_left", "aisle_center", "aisle_right"]
+    browse_zone = zones[int(hashlib.md5(cid.encode()).hexdigest(), 16) % len(zones)]
 
-    _emit(db, run_id, "CUSTOMER_ENTER", customerId=cid, color=color)
+    _emit(db, run_id, "CUSTOMER_ENTER", customerId=cid, color=color, device=device, customerType=customer_type)
     time.sleep(step_delay)
 
     _emit(db, run_id, "CUSTOMER_BROWSE", customerId=cid, zone=browse_zone)
@@ -65,10 +91,10 @@ def emit_customer_journey(db, run_id: str, journey: dict, step_delay: float = 0.
     _emit(db, run_id, "CUSTOMER_QUEUE", customerId=cid)
     time.sleep(step_delay)
 
-    _emit(db, run_id, "CUSTOMER_CHECKOUT", customerId=cid, total=0)
+    _emit(db, run_id, "CUSTOMER_CHECKOUT", customerId=cid, total=journey.get("total", 0), fee=journey.get("fee"))
     time.sleep(step_delay)
 
-    if journey["result"] == "completed":
+    if journey.get("result") == "completed":
         _emit(db, run_id, "CUSTOMER_SUCCESS", customerId=cid)
     else:
         bubble = journey.get("reason") or "Not happy about this... 😠"

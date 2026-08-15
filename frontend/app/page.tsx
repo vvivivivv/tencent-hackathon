@@ -90,17 +90,33 @@ function PageContent() {
       try {
         const state = await backendApi.getRunState(runId);
         setProgress(p => Math.min(p + 5, 96));
+
         if (!seenStages.has(state.stage)) {
           seenStages.add(state.stage);
-          handleAgentLog({
-            type: ["INVESTIGATE", "ROOT_CAUSE"].includes(state.stage) ? "INVESTIGATE" : "INFO",
-            title: `Pipeline: ${state.stage}`,
-            narrative: state.detection?.summary || `System transitioned to ${state.stage}.`,
-            technical: JSON.stringify({ investigator: state.investigator_report, operator: state.operator_report }, null, 2),
-          });
+
+          if (state.stage === "ERROR") {
+            const raw = state.error || "";
+            const isQuota = raw.includes("429") || raw.includes("RESOURCE_EXHAUSTED") || raw.toLowerCase().includes("quota");
+            handleAgentLog({
+              type: "INFO",
+              title: isQuota ? "Gemini quota exceeded" : "Run failed",
+              narrative: isQuota
+                ? "The Gemini API's free-tier daily limit (20 requests/day for this model) has been reached. Wait for the quota to reset, or switch to a different API key."
+                : "The pipeline hit an unexpected error and stopped.",
+              technical: raw || "No error detail was returned by the backend.",
+            });
+          } else {
+            handleAgentLog({
+              type: ["INVESTIGATE", "ROOT_CAUSE"].includes(state.stage) ? "INVESTIGATE" : "INFO",
+              title: `Pipeline: ${state.stage}`,
+              narrative: state.detection?.summary || `System transitioned to ${state.stage}.`,
+              technical: JSON.stringify({ investigator: state.investigator_report, operator: state.operator_report }, null, 2),
+            });
+          }
         }
+
         if (["CLOSE", "ESCALATED", "ERROR"].includes(state.stage)) {
-          setResolved(true);
+          setResolved(state.stage !== "ERROR");
           setProgress(100);
           return;
         }

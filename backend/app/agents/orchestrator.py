@@ -244,22 +244,20 @@ class Orchestrator:
 
     def _stage_investigate(self):
         self._transition(Stage.INVESTIGATE)
-        emit_agent_move(self.db, self.state.run_id, "aisle_center")
-        emit_agent_speak(self.db, self.state.run_id, "Anomaly detected. Investigating root cause...")
-        self.state.investigator_report = {
-            "reasoning": "Constructing counterfactual tests... Comparing mobile vs desktop baselines."
-        }
+        try:
+            investigator_report = investigate_from_detection(self._detection, db=self.db, scenario=self.scenario)
+        except Exception as exc:
+            emit_agent_speak(self.db, self.state.run_id, "Investigation paused — API quota reached. Retrying shortly...")
+            self.state.error = f"Investigator call failed: {exc}"
+            self._investigator_report = None
+            self.state.investigator_report = None
+            yield self.state
+            raise
+        self._investigator_report = investigator_report
+        self.state.investigator_report = investigator_report.to_dict()
+        self.state.hypotheses = _extract_hypotheses(investigator_report)
         yield self.state
-        time.sleep(2)
-
-        report = investigate_from_detection(self._detection, db=self.db, scenario=self.scenario)
-        self._investigator_report = report
-        self.state.investigator_report = report.to_dict()
-        emit_agent_speak(self.db, self.state.run_id, f"Found it: {report.root_cause[:40]}...")
-        
-        self.state.hypotheses = _extract_hypotheses(report)
-        yield self.state
-        
+            
 
     def _stage_act(self):
         """PLAN + ACT (canary) + CANARY_CHECK + ACT (full) — Operator applies fix."""

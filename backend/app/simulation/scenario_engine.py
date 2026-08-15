@@ -198,11 +198,45 @@ def list_scenarios() -> list[dict]:
     ]
 
 
+def assign_custom_outcomes(personas: list[dict], business_state: dict | None = None) -> list[str]:
+    """
+    Deterministically assign outcomes across the WHOLE persona list for a
+    custom scenario, instead of an independent per-persona coin flip.
+
+    Why: with small cohorts (the default is 8 personas split across 4
+    segments), independent random.random() < rate draws are too noisy —
+    a requested 50% abandonment rate can easily produce 0-of-2 or 2-of-2
+    in any given segment by chance, so detect_anomalies() (which needs
+    min_sample=2 AND a >20pp diff) frequently finds nothing even though
+    the user asked for a strong signal. This guarantees the requested
+    rate is actually hit among matching personas.
+    """
+    import random
+    bs = business_state or {}
+    target_device = bs.get("target_device") or "all"
+    target_type = bs.get("target_customer_type") or "all"
+    rate = float(bs.get("abandonment_rate", 0.5))
+
+    matching_idx = [
+        i for i, p in enumerate(personas)
+        if (target_device in ("all", p.get("device")))
+        and (target_type in ("all", p.get("customer_type")))
+    ]
+
+    n_abandon = round(len(matching_idx) * rate)
+    abandon_set = set(random.sample(matching_idx, n_abandon)) if matching_idx else set()
+
+    return [
+        "abandoned" if i in abandon_set else "completed"
+        for i in range(len(personas))
+    ]
+
+
 def _custom_inject(persona: dict, business_state: dict | None = None) -> str:
     """
-    Generic parametrized injector for user-defined stress-test scenarios.
-    business_state carries: target_device, target_customer_type, abandonment_rate.
-    "all" or None on target_* matches every persona in that dimension.
+    Kept for API compatibility with run_scenario()'s per-persona interface,
+    but custom scenarios should use assign_custom_outcomes() (whole-cohort)
+    via run_custom_scenario() below instead, for a deterministic rate.
     """
     import random
     bs = business_state or {}
@@ -211,11 +245,34 @@ def _custom_inject(persona: dict, business_state: dict | None = None) -> str:
     target_device = bs.get("target_device") or "all"
     target_type = bs.get("target_customer_type") or "all"
     rate = float(bs.get("abandonment_rate", 0.5))
-
     matches = (target_device in ("all", device)) and (target_type in ("all", ctype))
     if matches:
         return "abandoned" if random.random() < rate else "completed"
     return "completed"
+
+
+def run_custom_scenario(scenario_name: str, personas: list[dict]) -> list[dict]:
+    """
+    Like run_scenario(), but for custom_ scenarios: assigns outcomes across
+    the whole cohort at once (see assign_custom_outcomes) so the requested
+    abandonment_rate is actually reflected, instead of per-persona coin flips.
+    """
+    scenario = SCENARIOS[scenario_name]
+    bs = scenario.get("business_state", {})
+    outcomes = assign_custom_outcomes(personas, bs)
+
+    return [
+        {
+            **p,
+            "scenario": scenario_name,
+            "result": outcomes[i],
+            "business_state": bs,
+            "goal": p.get("goal", "complete a purchase"),
+            "device": p.get("device", "desktop"),
+            "customer_type": p.get("customer_type", "returning"),
+        }
+        for i, p in enumerate(personas)
+    ]
 
 
 def register_custom_scenario(
